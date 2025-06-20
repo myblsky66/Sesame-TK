@@ -1,0 +1,52 @@
+name: Selective Sync with rsync
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # 每小时同步一次
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      workflows: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+
+      - name: Install rsync
+        run: sudo apt-get install -y rsync
+
+      - name: Add Upstream
+        run: |
+          git remote add upstream https://github.com/Fansirsqi/Sesame-TK.git || true
+          git fetch upstream
+
+      - name: Selective Sync
+        run: |
+          # 创建临时上游工作目录
+          mkdir -p upstream_tmp
+          git --work-tree=upstream_tmp checkout upstream/main -- .
+          
+          # 使用rsync同步，排除指定目录/文件
+          rsync -av --delete \
+            --exclude='.github/workflows/' \          # 排除整个目录
+            --exclude='README.md' \ # 排除单个文件
+           # --exclude='.github/' \         # 保留原工作流配置
+            upstream_tmp/ ./
+
+          # 清理临时目录
+          rm -rf upstream_tmp
+
+      - name: Commit Changes
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "216294726+myblsky66@users.noreply.github.com
+          git add .
+          git commit -m "chore: sync with upstream (excluded .github/workflows/ and README.md)" || echo "No changes to commit"
+          git push origin main
