@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-     # workflows: write
 
     steps:
       - name: Checkout
@@ -37,7 +36,6 @@ jobs:
           rsync -av --delete \
             --exclude='.github/workflows/' \          # 排除整个目录
             --exclude='README.md' \ # 排除单个文件
-           # --exclude='.github/' \         # 保留原工作流配置
             upstream_tmp/ ./
 
           # 清理临时目录
