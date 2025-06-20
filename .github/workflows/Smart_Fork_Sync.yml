@@ -1,0 +1,60 @@
+name: Smart Fork Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'  # 每小时检查
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # 只读权限
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure upstream
+        run: |
+          git remote add upstream https://github.com/Fansirsqi/Sesame-TK.git || true
+          git fetch --all
+
+      - name: Check sync status
+        id: check
+        run: |
+          if [ $(git rev-parse main) = $(git rev-parse upstream/main) ]; then
+            echo "status=up_to_date" >> $GITHUB_OUTPUT
+            echo "✅ 分支已是最新"
+          else
+            echo "status=needs_update" >> $GITHUB_OUTPUT
+            echo "🔄 需要同步更新"
+          fi
+
+      - name: Backup protected files (仅需更新时)
+        if: steps.check.outputs.status == 'needs_update'
+        run: |
+          mkdir -p .sync_backup
+          [ -d .github/workflows/ ] && cp -R .github/workflows/ .sync_backup/
+          [ -f README.md ] && cp README.md .sync_backup/
+
+      - name: Perform sync (仅需更新时)
+        if: steps.check.outputs.status == 'needs_update'
+        run: |
+          git checkout -B main upstream/main --force
+          [ -d .sync_backup/workflows ] && {
+            rm -rf .github/workflows
+            mv .sync_backup/workflows .github/
+          }
+          [ -f .sync_backup/README.md ] && mv .sync_backup/README.md ./
+          rm -rf .sync_backup
+
+      - name: Post-sync status
+        run: |
+          echo "=== 最终状态 ==="
+          git status
+          echo "保留文件校验:"
+          [ -d .github/workflows/ ] && ls -la .github/workflows/
+          [ -f README.md ] && ls -la README.md
