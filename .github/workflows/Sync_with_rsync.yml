@@ -50,7 +50,7 @@ jobs:
         run: |
           cd local_repo
           git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
+          git config user.email "216294726+myblsky66@users.noreply.github.com"
           git add .
           git diff --cached --quiet || git commit -m "chore: sync excluding workflows and README"
           git push origin main
