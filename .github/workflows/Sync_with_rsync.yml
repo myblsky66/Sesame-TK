@@ -15,7 +15,7 @@ jobs:
       - name: Checkout target repository
         uses: actions/checkout@v4
         with:
-          path: 'local_repo'
+          path: 'Sesame-TK'
           token: ${{ secrets.PAT }}
           fetch-depth: 0
 
