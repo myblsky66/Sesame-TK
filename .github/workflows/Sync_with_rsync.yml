@@ -1,9 +1,9 @@
-name: Fixed Rsync Sync
+name: Selective Fork Sync
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'  # 每小时自动同步
 
 jobs:
   sync:
@@ -12,56 +12,45 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout target
+      - name: Checkout target repository
         uses: actions/checkout@v4
         with:
-          path: 'local_repo'  # 修改为更明确的目录名
+          path: 'local_repo'
           token: ${{ secrets.PAT }}
+          fetch-depth: 0
 
-      - name: Install rsync
-        run: sudo apt-get install -y rsync
-
-      - name: Fetch upstream
+      - name: Fetch upstream changes
         run: |
-          git remote add upstream https://github.com/Fansirsqi/Sesame-TK.git
-          git fetch upstream
+          cd local_repo
+          git remote add upstream https://github.com/Fansirsqi/Sesame-TK.git || true
+          git fetch upstream main
 
-      - name: Prepare upstream
+      - name: Backup excluded files
         run: |
-          mkdir -p upstream_src && cd upstream_src
-          git init
-          git remote add origin https://github.com/Fansirsqi/Sesame-TK.git
-          git fetch origin main
-          git checkout origin/main -f
+          cd local_repo
+          mkdir -p .sync_backup
+          cp -a .github/workflows/ .sync_backup/
+          cp README.md .sync_backup/ || echo "README.md not found"
 
-      - name: Validate directory structure
+      - name: Hard reset to upstream
         run: |
-          echo "=== Directory Structure ==="
-          echo "Upstream:"
-          ls -la upstream_src/
-          echo "Local:"
-          ls -la local_repo/
-          echo "Working dir: $(pwd)"
+          cd local_repo
+          git checkout --force upstream/main
+          git reset --hard upstream/main
 
-      - name: Run fixed rsync
+      - name: Restore excluded files
         run: |
-          # 使用绝对路径确保准确性
-          rsync -av --delete \
-            --exclude='.git/' \
-            --exclude='.github/workflows/' \
-            --exclude='/README.md' \
-            "$(pwd)/upstream_src/" "$(pwd)/local_repo/"  # 关键修复：使用绝对路径
+          cd local_repo
+          rm -rf .github/workflows/
+          mv .sync_backup/workflows/ .github/ || echo "No workflows to restore"
+          mv .sync_backup/README.md ./ || echo "No README to restore"
+          rm -rf .sync_backup
 
-          # 验证同步结果
-          echo "=== Sync Verification ==="
-          ls -la local_repo/.github/workflows/
-          [ -f local_repo/README.md ] && echo "README.md preserved"
-
-      - name: Commit changes
+      - name: Commit selective changes
         run: |
           cd local_repo
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add .
-          git diff --cached --quiet || git commit -m "chore: sync with exclusions"
-          git push
+          git diff --cached --quiet || git commit -m "chore: sync excluding workflows and README"
+          git push origin main
