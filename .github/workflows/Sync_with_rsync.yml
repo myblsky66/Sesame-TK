@@ -12,39 +12,54 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
+      - name: Checkout target repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          path: 'target'
           token: ${{ secrets.PAT }}
 
       - name: Install rsync
         run: sudo apt-get install -y rsync
 
-      - name: Add Upstream
+      - name: Fetch upstream
         run: |
-          git remote add upstream https://github.com/Fansirsqi/Sesame-TK.git || true
+          git remote add upstream https://github.com/Fansirsqi/Sesame-TK.git
           git fetch upstream
 
-      - name: Selective Sync
+      - name: Prepare upstream files
         run: |
-          # 创建临时上游工作目录
-          mkdir -p upstream_tmp
-          git --work-tree=upstream_tmp checkout upstream/main -- .
-          
-          # 使用rsync同步，排除指定目录/文件
+          mkdir -p upstream
+          git --work-tree=upstream checkout upstream/main -- .
+
+      - name: Debug directory structure
+        run: |
+          echo "=== Directory Structure ==="
+          echo "Upstream content:"
+          ls -l upstream/
+          echo "Target content:"
+          ls -l target/
+
+      - name: Run rsync with exclusions
+        run: |
           rsync -av --delete \
-            --exclude='.github/workflows/' \          # 排除整个目录
-            --exclude='README.md' \ # 排除单个文件
-            upstream_tmp/ ./
+            --exclude='.git/' \
+            --exclude='.github/workflows/' \  # 保留原有工作流
+            --exclude='/README.md' \          # 排除根目录README.md
+            --exclude='.syncignore' \         # 可选：排除同步规则文件
+            upstream/ target/
 
-          # 清理临时目录
-          rm -rf upstream_tmp
-
-      - name: Commit Changes
+      - name: Verify sync results
         run: |
+          echo "=== Post-Sync Verification ==="
+          echo "Checking preserved files:"
+          ls -l target/.github/workflows/
+          cat target/README.md || echo "README.md preserved"
+
+      - name: Commit and push changes
+        run: |
+          cd target
           git config user.name "GitHub Actions"
-          git config user.email "216294726+myblsky66@users.noreply.github.com
+          git config user.email "actions@github.com"
           git add .
-          git commit -m "chore: sync with upstream (excluded .github/workflows/ and README.md)" || echo "No changes to commit"
-          git push origin main
+          git commit -m "chore: sync excluding workflows and README" || echo "No changes"
+          git push
