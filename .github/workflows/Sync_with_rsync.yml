@@ -1,4 +1,4 @@
-name: Robust Rsync Sync
+name: Fixed Rsync Sync
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout target
         uses: actions/checkout@v4
         with:
-          path: 'target_repo'
+          path: 'local_repo'  # 修改为更明确的目录名
           token: ${{ secrets.PAT }}
 
       - name: Install rsync
@@ -28,40 +28,40 @@ jobs:
 
       - name: Prepare upstream
         run: |
-          mkdir -p upstream_repo
-          git --work-tree=upstream_repo checkout upstream/main -- .
+          mkdir -p upstream_src && cd upstream_src
+          git init
+          git remote add origin https://github.com/Fansirsqi/Sesame-TK.git
+          git fetch origin main
+          git checkout origin/main -f
 
-      - name: Validate paths
+      - name: Validate directory structure
         run: |
-          echo "=== Path Verification ==="
-          echo "Workspace: $GITHUB_WORKSPACE"
-          echo "Upstream path: $(pwd)/upstream_repo"
-          echo "Target path: $(pwd)/target_repo"
-          ls -ld $GITHUB_WORKSPACE upstream_repo target_repo
+          echo "=== Directory Structure ==="
+          echo "Upstream:"
+          ls -la upstream_src/
+          echo "Local:"
+          ls -la local_repo/
+          echo "Working dir: $(pwd)"
 
-      - name: Run rsync (debug)
+      - name: Run fixed rsync
         run: |
-          cd $GITHUB_WORKSPACE
-          rsync -avn \  # Dry-run first
-            --exclude='.git/' \
-            --exclude='.github/workflows/' \
-            --exclude='/README.md' \
-            upstream_repo/ target_repo/
-
-      - name: Execute rsync
-        run: |
-          cd $GITHUB_WORKSPACE
+          # 使用绝对路径确保准确性
           rsync -av --delete \
             --exclude='.git/' \
             --exclude='.github/workflows/' \
             --exclude='/README.md' \
-            upstream_repo/ target_repo/
+            "$(pwd)/upstream_src/" "$(pwd)/local_repo/"  # 关键修复：使用绝对路径
+
+          # 验证同步结果
+          echo "=== Sync Verification ==="
+          ls -la local_repo/.github/workflows/
+          [ -f local_repo/README.md ] && echo "README.md preserved"
 
       - name: Commit changes
         run: |
-          cd target_repo
+          cd local_repo
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add .
-          git diff --cached --quiet || git commit -m "chore: sync excluding workflows and README"
+          git diff --cached --quiet || git commit -m "chore: sync with exclusions"
           git push
