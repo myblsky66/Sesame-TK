@@ -1,56 +1,55 @@
-name: Selective Sync
+name: Local Sync Only
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发
   schedule:
-    - cron: '0 * * * *'  # 每小时自动同步
+    - cron: '0 * * * *'  # 每小时自动执行
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    permissions: {}  # 不需要任何权限，因为不推送
 
     steps:
-      - name: Checkout
+      - name: Checkout without token
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # 获取完整历史
+
+      - name: Configure git
+        run: |
+          git config --global user.name "Auto Sync"
+          git config --global user.email "auto-sync@users.noreply.github.com"
 
       - name: Backup protected files
         run: |
-          backup_dir=".sync_backup_$(date +%s)"
-          mkdir -p "$backup_dir"
-          [ -d .github/workflows/ ] && cp -a .github/workflows/ "$backup_dir"/
-          [ -f README.md ] && cp README.md "$backup_dir"/
-          echo "BACKUP_DIR=$backup_dir" >> $GITHUB_ENV
+          mkdir -p .sync_backup
+          [ -d .github/workflows/ ] && cp -R .github/workflows/ .sync_backup/
+          [ -f README.md ] && cp README.md .sync_backup/
 
-      - name: Fetch upstream
+      - name: Add upstream remote
         run: |
           git remote add upstream https://github.com/Fansirsqi/Sesame-TK.git || true
           git fetch upstream main
 
-      - name: Reset to upstream
+      - name: Reset local files
         run: |
           git checkout -B main upstream/main --force
+          git reset --hard upstream/main
 
       - name: Restore protected files
         run: |
-          [ -d "$BACKUP_DIR/workflows" ] && {
-            rm -rf .github/workflows/
-            mv "$BACKUP_DIR/workflows" .github/
+          [ -d .sync_backup/workflows ] && {
+            rm -rf .github/workflows
+            mv .sync_backup/workflows .github/
           }
-          [ -f "$BACKUP_DIR/README.md" ] && mv "$BACKUP_DIR/README.md" ./
-          rm -rf "$BACKUP_DIR"
+          [ -f .sync_backup/README.md ] && mv .sync_backup/README.md ./
+          rm -rf .sync_backup
 
-      - name: Commit changes
+      - name: Show local changes
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "216294726+myblsky66@users.noreply.github.com"
-          git add .
-          if git diff --cached --quiet; then
-            echo "没有需要保留的更改"
-          else
-            git commit -m "chore: 保留本地workflows和README"
-            git push origin main
-          fi
+          echo "=== 本地已更新 ==="
+          echo "保留的文件："
+          ls -la .github/workflows/ README.md
+          echo "其他文件已同步上游版本"
+          git status
