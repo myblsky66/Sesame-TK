@@ -1,62 +1,56 @@
+---
 name: Android CI
-
 on:
   push:
-    branches: ["develop"]
+    branches:
+      - develop
   pull_request:
-    branches: ["develop"]
+    branches:
+      - develop
   release:
-    types: [published]
-  workflow_dispatch:
-
+    types:
+      - published
+  workflow_dispatch: null
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Set Timezone to Asia/Shanghai
         run: |
           sudo timedatectl set-timezone Asia/Shanghai
           echo "Current time: $(date)"
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           java-version: "17"
-          distribution: "zulu"
+          distribution: zulu
           cache: gradle
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
           gradle-version: wrapper
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-
       - name: Build with Gradle
-        run: ./gradlew assembleNormalRelease assembleCompatibleRelease -Pversion=${{ github.ref_name }}
-
+        run: ./gradlew assembleNormalRelease assembleCompatibleRelease -Pversion=${{
+          github.ref_name }}
       - name: Locate APKs and Set Outputs
         id: locate_apks
-        run: |
-          normal_apk=$(find app/build/outputs/apk/normal/release -name "*.apk" | head -n 1)
-      ##    compatible_apk=$(find app/build/outputs/apk/compatible/release -name "*.apk" | head -n 1)
+        run: >
+          normal_apk=$(find app/build/outputs/apk/normal/release -name "*.apk" | head
+          -n 1)
+
           echo "normal_apk=$normal_apk" >> $GITHUB_OUTPUT
-      ##    echo "compatible_apk=$compatible_apk" >> $GITHUB_OUTPUT
-
       - name: Copy APKs to staging for signing
-        run: |
+        run: >
           mkdir -p app/build/outputs/apk/all
-          cp "${{ steps.locate_apks.outputs.normal_apk }}" app/build/outputs/apk/all/
-      ##    cp "${{ steps.locate_apks.outputs.compatible_apk }}" app/build/outputs/apk/all/
 
+          cp "${{ steps.locate_apks.outputs.normal_apk }}" app/build/outputs/apk/all/
       - name: Sign APKs
         id: sign_apks
         uses: ilharp/sign-android-release@v2
@@ -67,50 +61,38 @@ jobs:
           keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
           buildToolsVersion: 36.0.0
-
       - name: Extract Signed APK Paths
         id: extract_apks
-        run: |
+        run: >
           IFS=':' read -r -a files <<< "${{ steps.sign_apks.outputs.signedFiles }}"
+
           for file in "${files[@]}"; do
             if [[ "$file" == *Normal* ]]; then
               echo "signed_normal=$file" >> $GITHUB_OUTPUT
-      ##      elif [[ "$file" == *Compatible* ]]; then
-      ##        echo "signed_compatible=$file" >> $GITHUB_OUTPUT
             fi
           done
-
-     ## - name: Upload APK - Compatible
-     ##   uses: actions/upload-artifact@v4
-     ##   with:
-     ##     name: apk-compatible
-     ##     path: ${{ steps.extract_apks.outputs.signed_compatible }}
-
-     ## - name: Upload APK - Normal
-     ##   uses: actions/upload-artifact@v4
-     ##   with:
-     ##     name: apk-normal
-     ##     path: ${{ steps.extract_apks.outputs.signed_normal }}
-
       - name: Extract file names
         id: extract_info
-        run: |
+        run: >
           normal_file=$(basename "${{ steps.extract_apks.outputs.signed_normal }}")
-      ##    compatible_file=$(basename "${{ steps.extract_apks.outputs.signed_compatible }}")
+
+
           # 提取版本号（以"Normal-"或"Compatible-"之后的部分为起点，以"-signed"之前的内容为终点）
+
           version=$(echo "$normal_file" | sed -E 's/.*-(Normal|Compatible)-(.*)-signed\.apk/\2/')
+
           echo "normal_file=$normal_file" >> $GITHUB_OUTPUT
-      ##    echo "compatible_file=$compatible_file" >> $GITHUB_OUTPUT
+
+
           echo "version=$version" >> $GITHUB_OUTPUT
-
       - name: Generate APKS Checksum
-        run: |
-          sha256sum ${{ steps.extract_apks.outputs.signed_normal }} > CHECKSUMS-Sesame-Normal-${{ steps.extract_info.outputs.version }}.${{ env.SHORT_SHA }}-signed.apk.sha256
-      ##    sha256sum ${{ steps.extract_apks.outputs.signed_compatible }} > CHECKSUMS-Sesame-Compatible-${{ steps.extract_info.outputs.version }}.${{ env.SHORT_SHA }}-signed.apk.sha256
-
+        run: >
+          sha256sum ${{ steps.extract_apks.outputs.signed_normal }} >
+          CHECKSUMS-Sesame-Normal-${{ steps.extract_info.outputs.version }}.${{
+          env.SHORT_SHA }}-signed.apk.sha256
       - name: Get Commit Details
         id: commit_details
-        run: |
+        run: >
           COMMIT_MESSAGE_BODY=$( \
             if [[ "${{ github.event_name }}" == "push" ]]; then \
               echo "🔨 $(git rev-list --count ${{ github.event.before }}..${{ github.event.after }}) new commits to ${{ github.repository }}:${{ github.ref_name }} ([compare view](https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.event.after }}))"; \
@@ -132,10 +114,12 @@ jobs:
               git log -1 --format="  %h ([view commit](https://github.com/${{ github.repository }}/commit/%H)): %s by %an"; \
             fi \
           )
-          echo "COMMIT_MESSAGE_BODY<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMIT_MESSAGE_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
 
+          echo "COMMIT_MESSAGE_BODY<<EOF" >> $GITHUB_OUTPUT
+
+          echo "$COMMIT_MESSAGE_BODY" >> $GITHUB_OUTPUT
+
+          echo "EOF" >> $GITHUB_OUTPUT
       - name: Send Combined Message
         uses: appleboy/telegram-action@master
         with:
@@ -146,27 +130,14 @@ jobs:
 
             - Files: 
               - Normal: `${{ steps.extract_info.outputs.normal_file }}`
-      ##        - Compatible: `${{ steps.extract_info.outputs.compatible_file }}`
             - Branch: `${{ github.ref_name }}`
             - Triggered by: `${{ github.actor }}`
 
-      ##      *下载说明:*
-      ##        * Normal 为正常版本,适用于`Android 8.0`及以上的系统
-      ##        * Compatible 为兼容版本,适用于`Android 7.0`及以下的系统,最低支持`Android 5.1`
-
             ${{ steps.commit_details.outputs.COMMIT_MESSAGE_BODY }}
           format: markdown
-
       - name: Send Normal APK
         uses: appleboy/telegram-action@master
         with:
           to: ${{ secrets.TG_CHAT_ID }}
           token: ${{ secrets.TG_BOT_TOKEN }}
           document: ${{ steps.extract_apks.outputs.signed_normal }}
-
-      ##- name: Send Compatible APK
-      ##  uses: appleboy/telegram-action@master
-      ##  with:
-      ##    to: ${{ secrets.TG_CHAT_ID }}
-      ##    token: ${{ secrets.TG_BOT_TOKEN }}
-      ##    document: ${{ steps.extract_apks.outputs.signed_compatible }}
