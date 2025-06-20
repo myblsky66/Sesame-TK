@@ -1,9 +1,9 @@
-name: Selective Sync with rsync
+name: Robust Rsync Sync
 
 on:
-  schedule:
-    - cron: '0 * * * *'  # 每小时同步一次
   workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
 
 jobs:
   sync:
@@ -12,10 +12,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout target repo
+      - name: Checkout target
         uses: actions/checkout@v4
         with:
-          path: 'target'
+          path: 'target_repo'
           token: ${{ secrets.PAT }}
 
       - name: Install rsync
@@ -26,40 +26,42 @@ jobs:
           git remote add upstream https://github.com/Fansirsqi/Sesame-TK.git
           git fetch upstream
 
-      - name: Prepare upstream files
+      - name: Prepare upstream
         run: |
-          mkdir -p upstream
-          git --work-tree=upstream checkout upstream/main -- .
+          mkdir -p upstream_repo
+          git --work-tree=upstream_repo checkout upstream/main -- .
 
-      - name: Debug directory structure
+      - name: Validate paths
         run: |
-          echo "=== Directory Structure ==="
-          echo "Upstream content:"
-          ls -l upstream/
-          echo "Target content:"
-          ls -l target/
+          echo "=== Path Verification ==="
+          echo "Workspace: $GITHUB_WORKSPACE"
+          echo "Upstream path: $(pwd)/upstream_repo"
+          echo "Target path: $(pwd)/target_repo"
+          ls -ld $GITHUB_WORKSPACE upstream_repo target_repo
 
-      - name: Run rsync with exclusions
+      - name: Run rsync (debug)
         run: |
+          cd $GITHUB_WORKSPACE
+          rsync -avn \  # Dry-run first
+            --exclude='.git/' \
+            --exclude='.github/workflows/' \
+            --exclude='/README.md' \
+            upstream_repo/ target_repo/
+
+      - name: Execute rsync
+        run: |
+          cd $GITHUB_WORKSPACE
           rsync -av --delete \
             --exclude='.git/' \
-            --exclude='.github/workflows/' \  # 保留原有工作流
-            --exclude='/README.md' \          # 排除根目录README.md
-            --exclude='.syncignore' \         # 可选：排除同步规则文件
-            upstream/ target/
+            --exclude='.github/workflows/' \
+            --exclude='/README.md' \
+            upstream_repo/ target_repo/
 
-      - name: Verify sync results
+      - name: Commit changes
         run: |
-          echo "=== Post-Sync Verification ==="
-          echo "Checking preserved files:"
-          ls -l target/.github/workflows/
-          cat target/README.md || echo "README.md preserved"
-
-      - name: Commit and push changes
-        run: |
-          cd target
+          cd target_repo
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add .
-          git commit -m "chore: sync excluding workflows and README" || echo "No changes"
+          git diff --cached --quiet || git commit -m "chore: sync excluding workflows and README"
           git push
